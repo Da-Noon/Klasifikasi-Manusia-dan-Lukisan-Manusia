@@ -14,7 +14,6 @@ st.set_page_config(
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-
 class MLP:
     def __init__(self, w_ih, b_h, w_ho, b_o):
         self.w_ih = w_ih
@@ -36,14 +35,12 @@ class MLP:
 def normalize_hu(hu):
     return [-np.sign(v) * np.log10(abs(v) + 1e-10) for v in hu]
 
-
 def extract_hu_moment(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     moments = cv2.moments(binary)
     hu = cv2.HuMoments(moments).flatten()
     return hu
-
 
 def pil_to_bgr(pil_img: Image.Image) -> np.ndarray:
     rgb = np.array(pil_img.convert("RGB"))
@@ -60,7 +57,6 @@ def load_model():
         return model, scaler, label_map, None
     except FileNotFoundError:
         return None, None, None, "❌ File **mlp_model.joblib** tidak ditemukan. Pastikan file ada di direktori yang sama dengan app.py."
-
 
 model, scaler, label_map, load_error = load_model()
 
