@@ -14,6 +14,7 @@ st.set_page_config(
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+
 class MLP:
     def __init__(self, w_ih, b_h, w_ho, b_o):
         self.w_ih = w_ih
@@ -35,12 +36,14 @@ class MLP:
 def normalize_hu(hu):
     return [-np.sign(v) * np.log10(abs(v) + 1e-10) for v in hu]
 
+
 def extract_hu_moment(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     moments = cv2.moments(binary)
     hu = cv2.HuMoments(moments).flatten()
     return hu
+
 
 def pil_to_bgr(pil_img: Image.Image) -> np.ndarray:
     rgb = np.array(pil_img.convert("RGB"))
@@ -57,6 +60,7 @@ def load_model():
         return model, scaler, label_map, None
     except FileNotFoundError:
         return None, None, None, "❌ File **mlp_model.joblib** tidak ditemukan. Pastikan file ada di direktori yang sama dengan app.py."
+
 
 model, scaler, label_map, load_error = load_model()
 
@@ -137,93 +141,51 @@ with tab_predict:
             st.caption(f"Sensor gerak: {'Ada gerakan (1)' if movement == 1 else 'Tidak ada gerakan (0)'}")
 
 with tab_eval:
-    st.subheader("📊 Evaluasi Model pada Data Test")
+    import pandas as pd
 
-    st.markdown(
-        """
-        Upload file **numpy (.npz)** hasil ekstraksi fitur test yang sudah di-scale.
+    st.subheader("📊 Evaluasi Proses Training")
 
-        File `.npz` harus berisi dua array:
-        - `X_test` – fitur test (n_samples × 8), sudah di-normalize
-        - `y_test` – label integer (n_samples,), nilai 0/1/2
-        """
-    )
+    # ── Data loss per epoch (dari hasil training) ──
+    epoch_losses = [
+        0.368467, 0.200634, 0.151817, 0.137913, 0.132482,
+        0.129711, 0.128063, 0.126950, 0.126122, 0.125514,
+        0.125019, 0.124608, 0.124266, 0.123923, 0.123720,
+        0.123548, 0.123350, 0.123174, 0.122974, 0.122872,
+        0.122664, 0.122665, 0.122520, 0.122429, 0.122438,
+        0.122278, 0.122258, 0.122152, 0.122138, 0.122053,
+        0.122026, 0.121952, 0.121929, 0.121887, 0.121846,
+        0.121791, 0.121763, 0.121636, 0.121689, 0.121695,
+        0.121630, 0.121602, 0.121567, 0.121547, 0.121507,
+        0.121507, 0.121452, 0.121424, 0.121352, 0.121381,
+    ]
+    epochs = list(range(1, len(epoch_losses) + 1))
 
-    uploaded_npz = st.file_uploader("Upload file X_test & y_test (.npz)", type=["npz"])
+    # ── Metrik ringkas ──
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Epoch", len(epochs))
+    col2.metric("Loss Awal", f"{epoch_losses[0]:.6f}")
+    col3.metric("Loss Akhir", f"{epoch_losses[-1]:.6f}",
+                delta=f"{epoch_losses[-1] - epoch_losses[0]:.6f}",
+                delta_color="inverse")
 
-    if uploaded_npz is not None:
-        with st.spinner("Mengevaluasi…"):
-            data = np.load(uploaded_npz)
-            X_test = data["X_test"]
-            y_test = data["y_test"].astype(int)
+    st.divider()
 
-            y_pred = np.array([model.predict(x)[0] for x in X_test])
+    # ── Grafik Loss per Epoch ──
+    st.markdown("#### 📉 Kurva Loss Training")
+    loss_df = pd.DataFrame({"Loss": epoch_losses}, index=epochs)
+    loss_df.index.name = "Epoch"
+    st.line_chart(loss_df, use_container_width=True)
 
-            accuracy = np.mean(y_pred == y_test)
-            classes = list(label_map.values())
-            n = len(classes)
+    st.divider()
 
-            cm = np.zeros((n, n), dtype=int)
-            for t, p in zip(y_test, y_pred):
-                cm[t][p] += 1
-
-            precision, recall, f1 = [], [], []
-            for i in range(n):
-                tp = cm[i][i]
-                fp = cm[:, i].sum() - tp
-                fn = cm[i, :].sum() - tp
-                prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-                rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-                f    = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
-                precision.append(prec)
-                recall.append(rec)
-                f1.append(f)
-
-        st.markdown(f"### Akurasi Keseluruhan: **{accuracy * 100:.2f}%**")
-
-        st.markdown("#### Confusion Matrix")
-        import pandas as pd
-        cm_df = pd.DataFrame(
-            cm,
-            index=[f"True: {c}" for c in classes],
-            columns=[f"Pred: {c}" for c in classes],
-        )
-        st.dataframe(cm_df, use_container_width=True)
-
-        st.markdown("#### Per-Class Metrics")
-        metrics_df = pd.DataFrame({
-            "Kelas":     classes,
-            "Precision": [f"{p:.4f}" for p in precision],
-            "Recall":    [f"{r:.4f}" for r in recall],
-            "F1-Score":  [f"{f:.4f}" for f in f1],
-        })
-        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
-
-        st.markdown("#### Distribusi Prediksi vs Label Asli")
-        dist_df = pd.DataFrame(
-            {
-                "Label Asli": [int(np.sum(y_test == i)) for i in range(n)],
-                "Prediksi":   [int(np.sum(y_pred == i)) for i in range(n)],
-            },
-            index=classes,
-        )
-        st.bar_chart(dist_df)
-
-    else:
-        st.info("Upload file .npz untuk melihat hasil evaluasi.")
-
-        with st.expander("💡 Cara membuat file .npz dari notebook"):
-            st.code(
-                """\
-# Jalankan di notebook setelah training:
-import numpy as np
-
-np.savez(
-    "test_data.npz",
-    X_test=image_test,                    # sudah di-scale
-    y_test=np.argmax(label_test, axis=1)  # konversi one-hot ke integer
-)
-print("✅ test_data.npz tersimpan")
-""",
-                language="python",
-            )
+    # ── Tabel lengkap epoch & loss ──
+    st.markdown("#### 📋 Tabel Loss per Epoch")
+    table_df = pd.DataFrame({
+        "Epoch": epochs,
+        "Loss":  [f"{v:.6f}" for v in epoch_losses],
+        "Δ Loss": ["–"] + [
+            f"{epoch_losses[i] - epoch_losses[i-1]:+.6f}"
+            for i in range(1, len(epoch_losses))
+        ],
+    })
+    st.dataframe(table_df, use_container_width=True, hide_index=True, height=300)
